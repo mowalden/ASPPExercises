@@ -20,10 +20,12 @@ def simple_add(a,b):
     int, float
         Returns the result of a + b.
 
-    Example
+    Examples
     --------
     >>> simple_add(1,2)
     3
+    >>> simple_add(-2,1)
+    -1
     """
     return a+b
 
@@ -45,10 +47,12 @@ def simple_sub(a,b):
     int, float
         Returns the result of a - b.
 
-    Example
+    Examples
     --------
     >>> simple_sub(3,2)
     1
+    >>> simple_sub(4,10)
+    -6
     """
     return a-b
 
@@ -70,10 +74,12 @@ def simple_mult(a,b):
     int, float
         Returns the result of a * b.
 
-    Example
+    Examples
     --------
     >>> simple_mult(3,2)
     6
+    >>> simple_mult(-3,10)
+    -30
     """
     return a*b
 
@@ -95,10 +101,12 @@ def simple_div(a,b):
     float
         Returns the result of a / b.
 
-    Example
+    Examples
     --------
     >>> simple_div(3,2)
     6
+     >>> simple_div(5,2)
+    2.5
     """
     return a/b
 
@@ -122,10 +130,12 @@ def poly_first(x, a0, a1):
     int, float
         Returns the result of a0 + a1 * x.
 
-    Example
+    Examples
     --------
     >>> poly_first(2,1,3)
     7
+    >>> poly_first(10,-10,0.5)
+    -5
     """
     return a0 + a1*x
 
@@ -152,10 +162,12 @@ def poly_second(x, a0, a1, a2):
     int, float
         Returns the result of a0 + a1 * x + a2 * x**2.
 
-    Example
+    Examples
     --------
     >>> poly_second(2,1,2,3)
     17
+    >>> poly_second(3,-100,10,3)
+    -43
     """
     return poly_first(x, a0, a1) + a2*(x**2)
 
