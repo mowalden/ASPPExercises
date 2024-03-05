@@ -1,21 +1,44 @@
 """A class intended to check whether a cymetric model obeys certain symmetries.
+
+Typical usage example:
+
+monomials = 5*np.eye(5, dtype=np.int64)
+coefficients = np.ones(5)
+kmoduli = np.ones(1)
+ambient = np.array([4])
+
+hyper_surf = [monomials, coefficients, kmoduli, ambient]
+
+obj = SymmetryCheck('permutation', hypersurface=hyper_surf)
+
+obj.summary()
+
 """
 
 import os as os
 import numpy as np
-large_width = 400
-np.set_printoptions(linewidth=large_width)
 import tensorflow as tf
 from cymetric.pointgen.pointgen import PointGenerator
 from cymetric.models.tfhelper import prepare_tf_basis, train_model
-from cymetric.models.callbacks import (RicciCallback, SigmaCallback, VolkCallback,
-                                       KaehlerCallback, TransitionCallback)
+from cymetric.models.callbacks import (
+    RicciCallback,
+    SigmaCallback,
+    VolkCallback,
+    KaehlerCallback,
+    TransitionCallback,
+)
 from cymetric.models.tfmodels import PhiFSModel
-from cymetric.models.metrics import (SigmaLoss, KaehlerLoss, TransitionLoss,
-                                     VolkLoss, RicciLoss, TotalLoss)
+from cymetric.models.metrics import (
+    SigmaLoss,
+    KaehlerLoss,
+    TransitionLoss,
+    VolkLoss,
+    RicciLoss,
+    TotalLoss,
+)
 
 
-class SymmetryCheck():
+class SymmetryCheck:
     """Checks specified symmetries of a specified hypersurface.
 
     The class takes a trained model and evaluates the model at points
@@ -45,34 +68,37 @@ class SymmetryCheck():
             points: Points of hypersurface.
         """
 
-        self.dirnames = ['data', 'trained_model']
+        self.dirnames = ["data", "trained_model"]
         self.hypersurface = hypersurface
         # weights on the loss functions
-        self.alpha = [1., 1., 1., 1., 1.]
-        if symmetry not in {'permutation', 'roots_of_unity'}:
-            raise ValueError(f'Symmetry {symmetry} not allowed. Must be either \'permutation\' '
-                             'or \'roots_of_unity\'.')
+        self.alpha = [1.0, 1.0, 1.0, 1.0, 1.0]
+        if symmetry not in {"permutation", "roots_of_unity"}:
+            raise ValueError(
+                f"Symmetry {symmetry} not allowed. Must be either 'permutation' "
+                "or 'roots_of_unity'."
+            )
         self.symmetry = symmetry
         if model is None:
             if self.hypersurface is None:
-                raise Exception('Model and hypersurface cannot be both undefined.')
+                raise Exception("Model and hypersurface cannot be both undefined.")
             cb_list, basis, data = self._prepare_data()
-            self.model, self.training_history = self._train_model(cb_list, basis)
+            self.model, self.training_history = self._train_model(cb_list, basis, data)
         else:
-            data = dict(np.load(os.path.join(self.dirnames[1], 'dataset.npz')))
-            basis = np.load(os.path.join(self.dirnames[1], 'basis.pickle'),
-                            allow_pickle=True)
+            data = dict(np.load(os.path.join(self.dirnames[1], "dataset.npz")))
+            basis = np.load(
+                os.path.join(self.dirnames[1], "basis.pickle"), allow_pickle=True
+            )
             basis = prepare_tf_basis(basis)
-            self.model = PhiFSModel(model, basis, alpha = self.alpha)
+            self.model = PhiFSModel(model, basis, alpha=self.alpha)
             self.training_history = None
         # Select patch
         patch = 0
-        self.points = np.delete(data['X_train'],
-                                np.where(data['X_train'][:,patch] != 1.),
-                                axis=0)
+        self.points = np.delete(
+            data["X_train"], np.where(data["X_train"][:, patch] != 1.0), axis=0
+        )
 
         self.general_diff = self._check_general_diff(self.points)
-        if self.symmetry == 'permutation':
+        if self.symmetry == "permutation":
             self.symmetry_diff = self._check_permutation_diff()
         else:
             self.symmetry_diff = self._check_scaling_diff()
@@ -87,39 +113,44 @@ class SymmetryCheck():
         """
 
         try:
-            self.pointgen = PointGenerator(self.hypersurface[0],
-                                     self.hypersurface[1],
-                                     self.hypersurface[2],
-                                     self.hypersurface[3])
+            self.pointgen = PointGenerator(
+                self.hypersurface[0],
+                self.hypersurface[1],
+                self.hypersurface[2],
+                self.hypersurface[3],
+            )
         except:
-            raise ValueError(f'Invalid input for hypersurface: {self.hypersurface}')
+            raise ValueError(f"Invalid input for hypersurface: {self.hypersurface}")
         try:
             kappa = self.pointgen.prepare_dataset(10000, self.dirnames[0])
             self.pointgen.prepare_basis(self.dirnames[0], kappa=kappa)
         except:
-            raise Exception('Error during creation of data folder. Please make sure that '
-                            'there is no folder with the name \'data\' in your directory.')
-        data = np.load(os.path.join(self.dirnames[0], 'dataset.npz'))
-        basis = np.load(os.path.join(self.dirnames[0], 'basis.pickle'), allow_pickle=True)
+            raise Exception(
+                "Error during creation of data folder. Please make sure that "
+                "there is no folder with the name 'data' in your directory."
+            )
+        data = np.load(os.path.join(self.dirnames[0], "dataset.npz"))
+        basis = np.load(
+            os.path.join(self.dirnames[0], "basis.pickle"), allow_pickle=True
+        )
         basis = prepare_tf_basis(basis)
 
         # Define callbacks
-        ricci_cb = RicciCallback((self.data['X_val'],
-                                  self.data['y_val']),
-                                  self.data['val_pullbacks'])
-        sigma_cb = SigmaCallback((self.data['X_val'], self.data['y_val']))
-        volk_cb = VolkCallback((self.data['X_val'], self.data['y_val']))
-        kaehler_cb = KaehlerCallback((self.data['X_val'], self.data['y_val']))
-        transition_cb = TransitionCallback((self.data['X_val'], self.data['y_val']))
+        ricci_cb = RicciCallback((data["X_val"], data["y_val"]), data["val_pullbacks"])
+        sigma_cb = SigmaCallback((data["X_val"], data["y_val"]))
+        volk_cb = VolkCallback((data["X_val"], data["y_val"]))
+        kaehler_cb = KaehlerCallback((data["X_val"], data["y_val"]))
+        transition_cb = TransitionCallback((data["X_val"], data["y_val"]))
         cb_list = [ricci_cb, sigma_cb, volk_cb, kaehler_cb, transition_cb]
         return cb_list, basis, data
 
-    def _train_model(self, cb_list, basis):
+    def _train_model(self, cb_list, basis, data):
         """Defines and trains the model.
 
         Args:
             cb_list: List of callbacks needed for training the model.
-            BASIS: Basis needed for training the model.
+            basis: Basis needed to train the model.
+            data: Data needed to train the model.
 
         Returns:
             fmodel: Training model.
@@ -127,44 +158,53 @@ class SymmetryCheck():
         """
         # Define neural network
         network_properties = {
-                    'n_layers': 3,  # Number of layers
-                    'n_nodes': 64,  # Number of nodes
-                    'n_epochs': 50, # Number of epochs
-                    'n_in': 10,     # Input dimension
-                    'n_out': 1,     # Output dimension
-                    'act': 'gelu',   # Activation function,
-                    'b_size': [64, 50000] # Batch size
+            "n_layers": 3,  # Number of layers
+            "n_nodes": 64,  # Number of nodes
+            "n_epochs": 50,  # Number of epochs
+            "n_in": 10,  # Input dimension
+            "n_out": 1,  # Output dimension
+            "act": "gelu",  # Activation function,
+            "b_size": [64, 50000],  # Batch size
         }
         # Setup layers
         neural_net = tf.keras.Sequential()
-        neural_net.add(tf.keras.Input(shape=(network_properties['n_in'])))
-        for i in range(network_properties['n_layers']):
-            neural_net.add(tf.keras.layers.Dense(network_properties['n_nodes'], 
-                                                 activation=network_properties['act']))
-        neural_net.add(tf.keras.layers.Dense(network_properties['n_out'], use_bias=False))
+        neural_net.add(tf.keras.Input(shape=(network_properties["n_in"])))
+        for i in range(network_properties["n_layers"]):
+            neural_net.add(
+                tf.keras.layers.Dense(
+                    network_properties["n_nodes"], activation=network_properties["act"]
+                )
+            )
+        neural_net.add(
+            tf.keras.layers.Dense(network_properties["n_out"], use_bias=False)
+        )
         # Define model
         fmodel = PhiFSModel(neural_net, basis, alpha=self.alpha)
         # Define loss functions
-        cmetrics = [TotalLoss(),
-                    SigmaLoss(),
-                    KaehlerLoss(),
-                    TransitionLoss(),
-                    VolkLoss(),
-                    RicciLoss()]
+        cmetrics = [
+            TotalLoss(),
+            SigmaLoss(),
+            KaehlerLoss(),
+            TransitionLoss(),
+            VolkLoss(),
+            RicciLoss(),
+        ]
         # Training
         opt = tf.keras.optimizers.Adam()
-        fmodel, training_history = train_model(fmodel,
-                                               self.data,
-                                               optimizer=opt,
-                                               epochs=network_properties['n_epochs'],
-                                               batch_sizes=network_properties['b_size'],
-                                               verbose=1,
-                                               custom_metrics=cmetrics,
-                                               callbacks=cb_list)
+        fmodel, training_history = train_model(
+            fmodel,
+            data,
+            optimizer=opt,
+            epochs=network_properties["n_epochs"],
+            batch_sizes=network_properties["b_size"],
+            verbose=1,
+            custom_metrics=cmetrics,
+            callbacks=cb_list,
+        )
         return fmodel, training_history
-    
+
     def _check_general_diff(self, points):
-        """Checks the general differences among points on the hypersurfes by taking 
+        """Checks the general differences among points on the hypersurfes by taking
            the difference of randomly drawn points.
 
         Args:
@@ -174,13 +214,14 @@ class SymmetryCheck():
             general_diff: Normalized general difference
         """
         idx = np.random.randint(np.size(points, axis=0), size=400)
-        randomPoints = np.array(np.split(points[idx], 2, axis=0))
-        norm = tf.norm(self.model(randomPoints[0]), axis=[-2,-1])
-        unnormalized_diff = tf.norm(self.model(randomPoints[0])
-                                    -self.model(randomPoints[1]), axis=[-2,-1])
-        general_diff = tf.math.reduce_mean(unnormalized_diff/norm).numpy()
-        return general_diff
-    
+        random_points = np.array(np.split(points[idx], 2, axis=0))
+        norm = tf.norm(self.model(random_points[0]), axis=[-2, -1])
+        unnormalized_diff = tf.norm(
+            self.model(random_points[0]) - self.model(random_points[1]), axis=[-2, -1]
+        )
+        general_diff = tf.math.reduce_mean(unnormalized_diff / norm).numpy()
+        return np.real(general_diff)
+
     def _check_permutation_diff(self):
         """Checks the differences among points on the hypersurfes which have been randomly permuted.
 
@@ -190,7 +231,9 @@ class SymmetryCheck():
         # Copy points such that change does not affect the point attribute
         points = self.points.copy()
         # Select points that are solved for the same coordinate
-        solved_for = self.model._find_max_dQ_coords(tf.convert_to_tensor(points, dtype=tf.float32))
+        solved_for = self.model._find_max_dQ_coords(
+            tf.convert_to_tensor(points, dtype=tf.float32)
+        )
         idx = np.where(solved_for == 1)
         points = points[idx[0]]
         # Compute metric at each point
@@ -199,22 +242,30 @@ class SymmetryCheck():
         points = self._to_complex(points)
         # Permute points
         points_permuted = points
-        points_permuted[:,2:5] = np.roll(points[:,2:5], -1, axis=-1)
+        points_permuted[:, 2:5] = np.roll(points[:, 2:5], -1, axis=-1)
         # Define Jacobian
-        jacobian = np.array([[0.,1.,0.],[0.,0.,1.],[1.,0.,0.]]).T
-        jacobian = np.repeat(np.expand_dims(jacobian, axis=0), 
-                             np.size(points_permuted, axis=0), axis=0)
+        jacobian = np.array([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]]).T
+        jacobian = np.repeat(
+            np.expand_dims(jacobian, axis=0), np.size(points_permuted, axis=0), axis=0
+        )
         # Convert back to cymetric format
         points_permuted = self._to_cymetric(points_permuted)
         # Compute metric after permutation with jacobian applied
-        after_permutation = jacobian@self.model(points_permuted)@np.transpose(jacobian, axes=(0,2,1)) 
+        after_permutation = (
+            jacobian
+            @ self.model(points_permuted)
+            @ np.transpose(jacobian, axes=(0, 2, 1))
+        )
         # Compute difference
-        difference = tf.math.reduce_mean(tf.norm(before_permutation - after_permutation,  axis=[-2,-1])/
-                                         tf.norm(before_permutation)).numpy()
-        return difference
-        
+        permuted_diff = tf.math.reduce_mean(
+            tf.norm(before_permutation - after_permutation, axis=[-2, -1])
+            / tf.norm(before_permutation)
+        ).numpy()
+        return np.real(permuted_diff)
+
     def _check_scaling_diff(self):
-        """Checks the differences among points on the hypersurfes which have been randomly scaled by 5-th roots of unity.
+        """Checks the differences among points on the hypersurfes 
+            which have been randomly scaled by 5-th roots of unity.
 
         Returns:
             scaling_diff: Normalized difference between scaled points.
@@ -227,39 +278,51 @@ class SymmetryCheck():
         idx = np.random.randint(0, group_elements.shape[0], points.shape[0])
         # Chose random group elements and scale points
         random_elements = group_elements[idx]
-        points_scaled = np.einsum('ij,ikj->ik', points, random_elements)
+        points_scaled = np.einsum("ij,ikj->ik", points, random_elements)
         # Fix coordinates for which to solve, since scaling might change cymetrics preferred choice
         j_elim = tf.expand_dims(tf.ones(points.shape[0], dtype=tf.int64), axis=-1)
         # Compute metric before and after scaling
         points = self._to_cymetric(points)
         points_scaled = self._to_cymetric(points_scaled)
         before_scale = self.model(points, j_elim=j_elim)
-        after_scale = random_elements[:,2:,2:]@self.model(points_scaled, j_elim=j_elim)@np.conjugate(random_elements[:,2:,2:])
+        after_scale = (
+            random_elements[:, 2:, 2:]
+            @ self.model(points_scaled, j_elim=j_elim)
+            @ np.conjugate(random_elements[:, 2:, 2:])
+        )
         # Compute differencce
-        scaling_diff = tf.math.reduce_mean(tf.norm(before_scale - after_scale, axis=1)/
-                                           tf.norm(before_scale, axis=1)).numpy()
-        return scaling_diff
-        
+        scaling_diff = tf.math.reduce_mean(
+            tf.norm(before_scale - after_scale, axis=1) / tf.norm(before_scale, axis=1)
+        ).numpy()
+        return np.real(scaling_diff)
+
     def _generate_group_elements(self):
-        """ Generates elements of Z_5^5.
+        """Generates elements of Z_5^5.
 
         Returns:
-            group_elements: List of group elements. Only elements which leave z_0 and z_1 invariant are selected
-                            in order to ensure that the scaling does not change the patch.
+            group_elements: List of group elements. Only elements which leave z_0 and z_1
+                            invariant are selected in order to ensure that the scaling
+                            does not change the patch.
         """
-        elements = [1./5, 2./5, 3./5, 4./5, 1.,]
+        elements = [
+            1.0 / 5,
+            2.0 / 5,
+            3.0 / 5,
+            4.0 / 5,
+            1.0,
+        ]
         # Generate all possible combinations of 'elements'
-        combinations = np.stack(np.meshgrid(*[elements]*len(elements)), axis=-1)
+        combinations = np.stack(np.meshgrid(*[elements] * len(elements)), axis=-1)
         combinations = np.reshape(combinations, [-1, len(elements)])
-        idx = np.where((combinations[:,0] == 1.) & (combinations[:,1] == 1.))
+        idx = np.where((combinations[:, 0] == 1.0) & (combinations[:, 1] == 1.0))
         idx = np.array(idx).flatten()
         combinations = combinations[idx]
         # Use all combinations to create representations in accordance to the cymetric input
-        group_elements = tf.linalg.diag(np.exp(2*np.pi*combinations*1.j))
+        group_elements = tf.linalg.diag(np.exp(2 * np.pi * combinations * 1.0j))
         return np.array(group_elements)
-    
+
     def _to_complex(self, points):
-        """ Converts points of the cymetric format [nbatch, 10] to complex points [nbatch, 5].
+        """Converts points of the cymetric format [nbatch, 10] to complex points [nbatch, 5].
 
         Args:
             points: Points in cymetric format to be converted.
@@ -267,12 +330,12 @@ class SymmetryCheck():
         Returns:
             complex_points: Converted points.
         """
-        dim = points.shape[1]//2
-        complex_points = points[:, 0:dim] + 1.j*points[:, dim:]
+        dim = points.shape[1] // 2
+        complex_points = points[:, 0:dim] + 1.0j * points[:, dim:]
         return complex_points
-    
+
     def _to_cymetric(self, points):
-        """ Converts complex points [nbatch, 5] to points of the cymetric format [nbatch, 10].
+        """Converts complex points [nbatch, 5] to points of the cymetric format [nbatch, 10].
 
         Args:
             points: Points in complex format to be converted.
@@ -284,23 +347,12 @@ class SymmetryCheck():
         cym_points = tf.convert_to_tensor(cym_points, dtype=tf.float32)
         return cym_points
 
-
-    
-
-
-    
-    
-
-
-
-monomials = 5*np.eye(5, dtype=np.int64)
-coefficients = np.ones(5)
-kmoduli = np.ones(1)
-ambient = np.array([4])
-
-hyper_surf = [monomials, coefficients, kmoduli, ambient]
-
-test = SymmetryCheck('roots_of_unity', model=tf.keras.models.load_model('trained_model/quintic.keras'))
-
-print(test.general_diff)
-print(test.symmetry_diff)
+    def summary(self):
+        """Prints out a summary of the symmetry check.
+        """
+        print(
+            "RESULTS: \n"
+            f"Symmetry checked: {self.symmetry}\n"
+            f"General normalized difference: {self.general_diff}\n"
+            f"Normalized difference after symmetry transformation: {self.symmetry_diff}\n"
+        )
