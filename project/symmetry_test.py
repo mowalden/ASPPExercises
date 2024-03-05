@@ -3,6 +3,8 @@
 
 import os as os
 import numpy as np
+large_width = 400
+np.set_printoptions(linewidth=large_width)
 import tensorflow as tf
 from cymetric.pointgen.pointgen import PointGenerator
 from cymetric.models.tfhelper import prepare_tf_basis, train_model
@@ -47,7 +49,6 @@ class SymmetryCheck():
         self.hypersurface = hypersurface
         # weights on the loss functions
         self.alpha = [1., 1., 1., 1., 1.]
-
         if symmetry not in {'permutation', 'roots_of_unity'}:
             raise ValueError(f'Symmetry {symmetry} not allowed. Must be either \'permutation\' '
                              'or \'roots_of_unity\'.')
@@ -64,7 +65,6 @@ class SymmetryCheck():
             basis = prepare_tf_basis(basis)
             self.model = PhiFSModel(model, basis, alpha = self.alpha)
             self.training_history = None
-
         # Select patch
         patch = 0
         self.points = np.delete(data['X_train'],
@@ -72,9 +72,10 @@ class SymmetryCheck():
                                 axis=0)
 
         self.general_diff = self._check_general_diff(self.points)
-        
         if self.symmetry == 'permutation':
             self.symmetry_diff = self._check_permutation_diff()
+        else:
+            self.symmetry_diff = self._check_scaling_diff()
 
     def _prepare_data(self):
         """Creates data needed for the model to be trained based on the hypersurface input.
@@ -141,10 +142,8 @@ class SymmetryCheck():
             neural_net.add(tf.keras.layers.Dense(network_properties['n_nodes'], 
                                                  activation=network_properties['act']))
         neural_net.add(tf.keras.layers.Dense(network_properties['n_out'], use_bias=False))
-
         # Define model
         fmodel = PhiFSModel(neural_net, basis, alpha=self.alpha)
-
         # Define loss functions
         cmetrics = [TotalLoss(),
                     SigmaLoss(),
@@ -152,7 +151,6 @@ class SymmetryCheck():
                     TransitionLoss(),
                     VolkLoss(),
                     RicciLoss()]
-
         # Training
         opt = tf.keras.optimizers.Adam()
         fmodel, training_history = train_model(fmodel,
@@ -198,8 +196,7 @@ class SymmetryCheck():
         # Compute metric at each point
         before_permutation = self.model(points)
         # Convert to complex format
-        dim = points.shape[1]//2
-        points = points[:, 0:dim] + 1.j*points[:, dim:]
+        points = self._to_complex(points)
         # Permute points
         points_permuted = points
         points_permuted[:,2:5] = np.roll(points[:,2:5], -1, axis=-1)
@@ -208,8 +205,7 @@ class SymmetryCheck():
         jacobian = np.repeat(np.expand_dims(jacobian, axis=0), 
                              np.size(points_permuted, axis=0), axis=0)
         # Convert back to cymetric format
-        points_permuted = np.concatenate((np.real(points_permuted), np.imag(points_permuted)), axis=-1)
-        points_permuted = tf.convert_to_tensor(points_permuted, dtype=tf.float32)
+        points_permuted = self._to_cymetric(points_permuted)
         # Compute metric after permutation with jacobian applied
         after_permutation = jacobian@self.model(points_permuted)@np.transpose(jacobian, axes=(0,2,1)) 
         # Compute difference
@@ -217,9 +213,83 @@ class SymmetryCheck():
                                          tf.norm(before_permutation)).numpy()
         return difference
         
+    def _check_scaling_diff(self):
+        """Checks the differences among points on the hypersurfes which have been randomly scaled by 5-th roots of unity.
 
+        Returns:
+            scaling_diff: Normalized difference between scaled points.
+        """
+        # Copy points such that change does not affect the point attribute
+        points = self.points.copy()
+        # Convert points to complex format
+        points = self._to_complex(points)
+        group_elements = self._generate_group_elements()
+        idx = np.random.randint(0, group_elements.shape[0], points.shape[0])
+        # Chose random group elements and scale points
+        random_elements = group_elements[idx]
+        points_scaled = np.einsum('ij,ikj->ik', points, random_elements)
+        # Fix coordinates for which to solve, since scaling might change cymetrics preferred choice
+        j_elim = tf.expand_dims(tf.ones(points.shape[0], dtype=tf.int64), axis=-1)
+        # Compute metric before and after scaling
+        points = self._to_cymetric(points)
+        points_scaled = self._to_cymetric(points_scaled)
+        before_scale = self.model(points, j_elim=j_elim)
+        after_scale = random_elements[:,2:,2:]@self.model(points_scaled, j_elim=j_elim)@np.conjugate(random_elements[:,2:,2:])
+        # Compute differencce
+        scaling_diff = tf.math.reduce_mean(tf.norm(before_scale - after_scale, axis=1)/
+                                           tf.norm(before_scale, axis=1)).numpy()
+        return scaling_diff
         
+    def _generate_group_elements(self):
+        """ Generates elements of Z_5^5.
 
+        Returns:
+            group_elements: List of group elements. Only elements which leave z_0 and z_1 invariant are selected
+                            in order to ensure that the scaling does not change the patch.
+        """
+        elements = [1./5, 2./5, 3./5, 4./5, 1.,]
+        # Generate all possible combinations of 'elements'
+        combinations = np.stack(np.meshgrid(*[elements]*len(elements)), axis=-1)
+        combinations = np.reshape(combinations, [-1, len(elements)])
+        idx = np.where((combinations[:,0] == 1.) & (combinations[:,1] == 1.))
+        idx = np.array(idx).flatten()
+        combinations = combinations[idx]
+        # Use all combinations to create representations in accordance to the cymetric input
+        group_elements = tf.linalg.diag(np.exp(2*np.pi*combinations*1.j))
+        return np.array(group_elements)
+    
+    def _to_complex(self, points):
+        """ Converts points of the cymetric format [nbatch, 10] to complex points [nbatch, 5].
+
+        Args:
+            points: Points in cymetric format to be converted.
+
+        Returns:
+            complex_points: Converted points.
+        """
+        dim = points.shape[1]//2
+        complex_points = points[:, 0:dim] + 1.j*points[:, dim:]
+        return complex_points
+    
+    def _to_cymetric(self, points):
+        """ Converts complex points [nbatch, 5] to points of the cymetric format [nbatch, 10].
+
+        Args:
+            points: Points in complex format to be converted.
+
+        Returns:
+            cym_points: Converted points.
+        """
+        cym_points = np.concatenate((np.real(points), np.imag(points)), axis=-1)
+        cym_points = tf.convert_to_tensor(cym_points, dtype=tf.float32)
+        return cym_points
+
+
+    
+
+
+    
+    
 
 
 
@@ -230,7 +300,7 @@ ambient = np.array([4])
 
 hyper_surf = [monomials, coefficients, kmoduli, ambient]
 
-test = SymmetryCheck('permutation', model=tf.keras.models.load_model('trained_model/quintic.keras'))
+test = SymmetryCheck('roots_of_unity', model=tf.keras.models.load_model('trained_model/quintic.keras'))
 
 print(test.general_diff)
 print(test.symmetry_diff)
